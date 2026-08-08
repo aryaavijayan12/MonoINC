@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Trustopoly - Strategic Realtime Board Game</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+    <div id="connection-status" class="status-banner demo">🟡 Demo Mode (No Firebase Configured)</div>
+
+    <div id="app">
+        <!-- 1. HOME SCREEN -->
+        <div id="screen-home" class="screen active">
+            <div class="logo-container">
+                <h1>TRUSTOPOLY</h1>
+                <p class="tagline">Equity, Credit, & Strategic Alliances</p>
+            </div>
+
+            <div class="card home-card">
+                <div class="form-group">
+                    <label for="player-name">Your Display Name</label>
+                    <input type="text" id="player-name" placeholder="e.g. Aryaa" maxlength="15">
+                </div>
+
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="switchHomeTab('create')">Create Game</button>
+                    <button class="tab-btn" onclick="switchHomeTab('join')">Join Game</button>
+                </div>
+
+                <div id="tab-create" class="tab-content active">
+                    <div class="form-group">
+                        <label for="max-players">Max Players</label>
+                        <select id="max-players">
+                            <option value="2">2 Players</option>
+                            <option value="3">3 Players</option>
+                            <option value="4" selected>4 Players</option>
+                            <option value="5">5 Players</option>
+                            <option value="6">6 Players</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary btn-block" onclick="createGame()">Create Game Room</button>
+                </div>
+
+                <div id="tab-join" class="tab-content">
+                    <div class="form-group">
+                        <label for="join-code">Game Code</label>
+                        <input type="text" id="join-code" placeholder="e.g. ABC123" style="text-transform: uppercase;">
+                    </div>
+                    <button class="btn btn-success btn-block" onclick="joinGame()">Join Room</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. LOBBY SCREEN -->
+        <div id="screen-lobby" class="screen">
+            <div class="card lobby-card">
+                <h2>TRUSTOPOLY LOBBY</h2>
+                <div class="room-code-display">
+                    <span>Room Code:</span>
+                    <strong id="lobby-code-val">------</strong>
+                    <button class="btn btn-sm" onclick="copyGameLink()">📋 Copy Link</button>
+                </div>
+
+                <div class="player-list-container">
+                    <h3>Connected Players</h3>
+                    <ul id="lobby-player-list" class="styled-list"></ul>
+                </div>
+
+                <div id="lobby-host-controls" class="host-only" style="display: none;">
+                    <button class="btn btn-primary btn-block" onclick="startGame()">🚀 Start Game Setup</button>
+                </div>
+                <div id="lobby-guest-msg" class="guest-only">
+                    <p class="pulse">Waiting for the host to start the game...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. MAIN GAME SCREEN -->
+        <div id="screen-game" class="screen">
+            <header class="game-header">
+                <div class="header-info">
+                    <span id="turn-indicator">Round 1 | Turn: ---</span>
+                    <span id="my-identity" class="badge">Me: ---</span>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-sm btn-outline" onclick="openModal('modal-bank')">🏦 Bank Menu</button>
+                    <button class="btn btn-sm btn-outline" onclick="openModal('modal-loans')">📜 Loans & Credit</button>
+                    <button class="btn btn-sm btn-outline" onclick="openModal('modal-trusts')">🤝 Trusts</button>
+                    <button class="btn btn-sm btn-outline" onclick="openModal('modal-trade')">🔄 Trade/Market</button>
+                </div>
+            </header>
+
+            <div class="game-layout">
+                <div class="board-column">
+                    <div id="board" class="board"></div>
+                </div>
+
+                <div class="controls-column">
+                    <div class="card action-panel">
+                        <div id="setup-banner" class="banner info" style="display: none;">
+                            <strong>Setup Phase Active:</strong> Negotiate, form Trusts, or buy assigned setup properties before launching turn rolls.
+                            <button id="btn-finish-setup" class="btn btn-sm btn-success" style="margin-top:5px;" onclick="finishSetupPhase()">Finish My Setup</button>
+                        </div>
+
+                        <div id="turn-controls">
+                            <h3>Current Turn: <span id="current-turn-player-name">---</span></h3>
+                            <div class="dice-box">
+                                <div id="dice-display">🎲 - + - = -</div>
+                                <button id="btn-roll-dice" class="btn btn-primary btn-lg" onclick="rollDice()">🎲 Roll Dice</button>
+                                <button id="btn-end-turn" class="btn btn-secondary btn-lg" onclick="endTurn()" disabled>End Turn</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3>Player Standings</h3>
+                        <div id="players-overview" class="players-grid"></div>
+                    </div>
+
+                    <div class="card log-card">
+                        <h3>Game Activity Log</h3>
+                        <div id="game-log" class="log-box"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALS -->
+    <div id="modal-property-action" class="modal">
+        <div class="modal-content">
+            <h3 id="prop-modal-title">Landed on Property</h3>
+            <div id="prop-modal-details" class="details-box"></div>
+            <div class="modal-actions">
+                <button id="btn-buy-prop" class="btn btn-success" onclick="buyCurrentProperty()">Buy Property</button>
+                <button id="btn-auction-prop" class="btn btn-warning" onclick="sendCurrentPropertyToAuction()">Send to Auction</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-auction" class="modal">
+        <div class="modal-content">
+            <h3>🏛️ Public Auction</h3>
+            <p id="auction-prop-name" class="highlight-title">---</p>
+            <div class="auction-status">
+                <div>Highest Bid: <strong id="auction-high-bid">$0</strong></div>
+                <div>Top Bidder: <strong id="auction-high-bidder">None</strong></div>
+            </div>
+            <div class="form-inline">
+                <input type="number" id="auction-bid-input" placeholder="Enter bid amount">
+                <button class="btn btn-primary" onclick="placeBid()">Place Bid</button>
+            </div>
+            <div class="modal-actions" style="margin-top: 15px;">
+                <button id="btn-end-auction" class="btn btn-danger" onclick="concludeAuction()">End Auction / Claim Winner</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-bank" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeModal('modal-bank')">&times;</span>
+            <h3>🏦 Bank Operations</h3>
+            <p class="subtitle">The central bank has infinite capital reserves.</p>
+            
+            <div class="tab-box">
+                <h4>Receive / Pay Bank</h4>
+                <div class="form-group">
+                    <input type="number" id="bank-amount" placeholder="Amount ($)" min="1">
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-success" onclick="bankTransaction('draw')">Withdraw From Bank</button>
+                    <button class="btn btn-danger" onclick="bankTransaction('pay')">Pay to Bank</button>
+                </div>
+            </div>
+            <hr>
+            <div class="tab-box">
+                <h4>Direct Player Transfer</h4>
+                <div class="form-group">
+                    <select id="transfer-target"></select>
+                </div>
+                <div class="form-group">
+                    <input type="number" id="transfer-amount" placeholder="Amount ($)" min="1">
+                </div>
+                <button class="btn btn-primary btn-block" onclick="executePlayerTransfer()">Transfer Money</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-loans" class="modal">
+        <div class="modal-content wide">
+            <span class="close-modal" onclick="closeModal('modal-loans')">&times;</span>
+            <h3>📜 Loans & Credit System</h3>
+            
+            <div class="grid-2col">
+                <div class="card-inner">
+                    <h4>Propose New Loan</h4>
+                    <div class="form-group">
+                        <label>Borrower</label>
+                        <select id="loan-borrower-select"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Lender</label>
+                        <select id="loan-lender-select"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Principal Amount ($)</label>
+                        <input type="number" id="loan-principal" value="200" min="10">
+                    </div>
+                    <div class="form-group">
+                        <label>Interest Rate (%)</label>
+                        <input type="number" id="loan-interest" value="10" min="0" max="100">
+                    </div>
+                    <p class="small-text">Duration: <strong>20 Rounds</strong> from creation.</p>
+                    <button class="btn btn-primary btn-block" onclick="issueLoan()">Issue Loan Contract</button>
+                </div>
+
+                <div class="card-inner">
+                    <h4>Active Loans</h4>
+                    <div id="active-loans-list" class="scroll-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-trusts" class="modal">
+        <div class="modal-content wide">
+            <span class="close-modal" onclick="closeModal('modal-trusts')">&times;</span>
+            <h3>🤝 Trusts & Corporate Holdings</h3>
+
+            <div class="grid-2col">
+                <div class="card-inner">
+                    <h4>Form New Trust</h4>
+                    <div class="form-group">
+                        <label>Trust Name</label>
+                        <input type="text" id="trust-name" placeholder="e.g. Sunset Syndicate">
+                    </div>
+                    <div class="form-group">
+                        <label>Select Unencumbered Properties to Assign (Min 2)</label>
+                        <div id="trust-properties-selector" class="checkbox-list"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Member Equity Allocation (Must sum to 100%)</label>
+                        <div id="trust-members-selector"></div>
+                    </div>
+                    <button class="btn btn-success btn-block" onclick="createTrust()">Form Trust</button>
+                </div>
+
+                <div class="card-inner">
+                    <h4>Active Trusts</h4>
+                    <div id="active-trusts-list" class="scroll-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-trade" class="modal">
+        <div class="modal-content wide">
+            <span class="close-modal" onclick="closeModal('modal-trade')">&times;</span>
+            <h3>🔄 Property Market & P2P Trading</h3>
+
+            <div class="grid-2col">
+                <div class="card-inner">
+                    <h4>P2P Trade Offer</h4>
+                    <div class="form-group">
+                        <label>Trade Partner</label>
+                        <select id="trade-partner-select" onchange="updateTradeFormUI()"></select>
+                    </div>
+                    <div class="grid-2col">
+                        <div>
+                            <h5>You Give</h5>
+                            <label>Cash ($)</label>
+                            <input type="number" id="trade-my-cash" value="0">
+                            <label>Properties</label>
+                            <div id="trade-my-props" class="checkbox-list"></div>
+                        </div>
+                        <div>
+                            <h5>They Give</h5>
+                            <label>Cash ($)</label>
+                            <input type="number" id="trade-their-cash" value="0">
+                            <label>Properties</label>
+                            <div id="trade-their-props" class="checkbox-list"></div>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary btn-block" style="margin-top:10px;" onclick="proposeTrade()">Propose Trade</button>
+                </div>
+
+                <div class="card-inner">
+                    <h4>Marketplace / Open Offers</h4>
+                    <div id="active-trades-list" class="scroll-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="firebase-config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
